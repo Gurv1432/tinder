@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MatchMe Pro - Multi Photo & Blur</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <style>
+        :root {
+            --primary: #ff4b6a; --text: #333; --bg: #f3f3f3;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Poppins', sans-serif; }
+        body { background: var(--bg); height: 100vh; display: flex; justify-content: center; overflow: hidden; }
+        
+        #app { width: 100%; max-width: 420px; background: white; height: 100%; position: relative; display: flex; flex-direction: column; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
+
+        /* VIEWS */
+        .view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: white; display: none; flex-direction: column; z-index: 10; overflow-y: auto; padding-bottom: 70px;}
+        .view.active { display: flex; }
+
+        /* HEADER */
+        .header { height: 60px; display: flex; align-items: center; justify-content: center; font-weight: 600; border-bottom: 1px solid #eee; font-size: 1.1rem;}
+
+        /* AUTH SCREEN */
+        .auth-box { padding: 40px; display: flex; flex-direction: column; justify-content: center; height: 100%; text-align: center; }
+        .input-field { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; outline: none; }
+        .btn { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 30px; font-weight: 600; cursor: pointer; margin-top: 10px; }
+        .btn-outline { background: transparent; border: 2px solid var(--primary); color: var(--primary); }
+        .error { color: red; font-size: 0.8rem; margin-top: 5px; display: none; }
+
+        /* PHOTO SLIDER (CAROUSEL) */
+        .card-stack { flex: 1; padding: 15px; display: flex; justify-content: center; align-items: center; position: relative; }
+        .profile-card { width: 100%; height: 100%; max-height: 550px; border-radius: 20px; overflow: hidden; position: relative; background: #000; box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
+        
+        .carousel { width: 100%; height: 100%; position: relative; }
+        .carousel-img { width: 100%; height: 100%; object-fit: cover; display: none; transition: opacity 0.3s; }
+        .carousel-img.active { display: block; }
+        
+        /* Blur Effect Class */
+        .blur-img { filter: blur(15px); transform: scale(1.1); } 
+
+        .card-overlay { position: absolute; bottom: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); color: white; padding: 20px 20px 80px 20px; pointer-events: none;}
+        
+        /* Slider Controls */
+        .slider-dots { position: absolute; top: 15px; width: 100%; display: flex; justify-content: center; gap: 5px; z-index: 20; }
+        .dot { width: 30px; height: 4px; background: rgba(255,255,255,0.5); border-radius: 2px; }
+        .dot.active { background: white; }
+        
+        .tap-area { position: absolute; top: 0; height: 100%; width: 50%; z-index: 15; cursor: pointer; }
+        .tap-left { left: 0; } .tap-right { right: 0; }
+
+        .actions { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 20px; z-index: 30; }
+        .act-btn { width: 60px; height: 60px; border-radius: 50%; border: none; font-size: 1.5rem; cursor: pointer; box-shadow: 0 5px 15px rgba(0,0,0,0.2); background: white; transition: 0.2s; display: flex; justify-content: center; align-items: center;}
+        .act-btn:active { transform: scale(0.9); }
+        .btn-no { color: #ff4b6a; } .btn-yes { color: #25d366; }
+
+        /* UPLOAD GRID */
+        .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+        .photo-slot { aspect-ratio: 1; background: #eee; border-radius: 10px; position: relative; overflow: hidden; display: flex; justify-content: center; align-items: center; cursor: pointer; border: 2px dashed #ccc;}
+        .photo-slot img { width: 100%; height: 100%; object-fit: cover; }
+        .remove-photo { position: absolute; top: 2px; right: 2px; background: red; color: white; border-radius: 50%; width: 20px; height: 20px; text-align: center; font-size: 12px; line-height: 20px; z-index: 5; }
+
+        /* TOGGLE SWITCH */
+        .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #f9f9f9; border-radius: 10px; margin-bottom: 10px; }
+        .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--primary); }
+        input:checked + .slider:before { transform: translateX(24px); }
+
+        /* CHAT */
+        .chat-list-item { padding: 15px; display: flex; align-items: center; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+        .avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; margin-right: 15px; }
+        .chat-window { display: flex; flex-direction: column; background: #fff; z-index: 100; padding-bottom: 0;}
+        .messages { flex: 1; padding: 15px; overflow-y: auto; background: #fafafa; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 8px 14px; border-radius: 16px; max-width: 75%; font-size: 0.9rem; }
+        .msg-me { align-self: flex-end; background: var(--primary); color: white; }
+        .msg-them { align-self: flex-start; background: white; border: 1px solid #eee; }
+        .input-area { padding: 10px; border-top: 1px solid #eee; display: flex; }
+
+        /* NAV */
+        .nav { position: absolute; bottom: 0; width: 100%; height: 60px; background: white; border-top: 1px solid #eee; display: flex; justify-content: space-around; align-items: center; z-index: 50; }
+        .nav-item { font-size: 1.4rem; color: #ccc; cursor: pointer; }
+        .nav-item.active { color: var(--primary); }
+
+        .loading { text-align: center; padding: 20px; color: #888; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+
+    <div id="view-auth" class="view active" style="z-index: 200;">
+        <div class="auth-box">
+            <h1 style="color: var(--primary); margin-bottom: 10px;">MatchMe</h1>
+            <p id="auth-sub" style="color: #666; margin-bottom: 30px;">Login to find matches</p>
+            
+            <input type="email" id="email" class="input-field" placeholder="Email">
+            <input type="password" id="password" class="input-field" placeholder="Password">
+            <div id="auth-error" class="error"></div>
+            
+            <button class="btn" id="btn-action" onclick="handleAuthAction()">Login</button>
+            <button class="btn btn-outline" style="margin-top: 10px;" onclick="toggleAuth()">Create New Account</button>
+            
+            <p style="font-size: 0.7rem; color: #aaa; margin-top: 30px;">
+                Dev Login: <b>admin@test.com</b> (Any pass)
+            </p>
+        </div>
+    </div>
+
+    <div id="view-setup" class="view">
+        <div class="header">Edit Profile</div>
+        <div style="padding: 20px;">
+            <p style="margin-bottom: 10px; font-size: 0.9rem; color: #666;">Add up to 4 Photos (Click box to add)</p>
+            
+            <div class="photo-grid" id="photo-grid">
+                </div>
+            <input type="file" id="file-input" hidden accept="image/*" onchange="handleFileSelect(event)">
+
+            <input type="text" id="setup-name" class="input-field" placeholder="Full Name">
+            <input type="text" id="setup-city" class="input-field" placeholder="City (e.g. Delhi)">
+            
+            <div class="toggle-row">
+                <span>Blur My Photos (Privacy)</span>
+                <label class="switch">
+                    <input type="checkbox" id="setup-blur">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <button class="btn" onclick="saveProfile()">Save Profile</button>
+        </div>
+    </div>
+
+    <div id="view-home" class="view" style="padding: 0;">
+        <div class="card-stack" id="card-area">
+            <div class="loading">Finding people...</div>
+        </div>
+    </div>
+
+    <div id="view-chats" class="view">
+        <div class="header">Messages</div>
+        <div id="chat-list-container">
+            <div class="loading">Loading conversations...</div>
+        </div>
+    </div>
+
+    <div id="view-profile" class="view">
+        <div class="header">My Profile</div>
+        <div style="padding: 20px; text-align: center;">
+            <img id="my-main-pic" src="" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin-bottom: 15px; border: 3px solid var(--primary);">
+            <h2 id="my-name-display">User</h2>
+            <p id="my-city-display" style="color: #666; margin-bottom: 30px;">City</p>
+
+            <button class="btn btn-outline" onclick="loadSetupData()">Edit Photos & Info</button>
+            <button class="btn" style="background: #333; margin-top: 10px;" onclick="doLogout()">Logout</button>
+            
+            <div id="dev-area" style="display: none; margin-top: 30px; background: #eee; padding: 15px; border-radius: 10px;">
+                <h4>Developer Zone</h4>
+                <button class="btn" style="background: #555; font-size: 0.8rem;" onclick="generateFakeUsers()">+ Add 3 Fake Users</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-chat-window" class="view chat-window">
+        <div class="header" style="justify-content: flex-start; padding: 0 15px;">
+            <i class="fas fa-arrow-left" onclick="showView('view-chats')" style="font-size: 1.2rem; cursor: pointer; padding: 10px;"></i>
+            <img id="chat-header-img" src="" class="avatar" style="width: 35px; height: 35px; margin: 0 10px;">
+            <span id="chat-header-name">User</span>
+        </div>
+        <div class="messages" id="msg-container"></div>
+        <div class="input-area">
+            <input type="text" id="msg-input" class="input-field" style="margin: 0; border-radius: 20px;" placeholder="Type a message...">
+            <button class="btn" style="width: 50px; border-radius: 50%; margin: 0 0 0 10px;" onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
+        </div>
+    </div>
+
+    <div class="nav" id="navbar" style="display: none;">
+        <div class="nav-item active" onclick="navTo('home')"><i class="fas fa-fire"></i></div>
+        <div class="nav-item" onclick="navTo('chats')"><i class="fas fa-comment-alt"></i></div>
+        <div class="nav-item" onclick="navTo('profile')"><i class="fas fa-user"></i></div>
+    </div>
+
+</div>
+
+<script>
+    // --- 1. FIREBASE CONFIG ---
+    // (Replace with your keys if needed, using the ones provided earlier)
+    const firebaseConfig = {
+      apiKey: "AIzaSyAoyQulYeas2xQWVgGg-L81jkCTU7aAozA",
+      authDomain: "tinder-ce3a1.firebaseapp.com",
+      databaseURL: "https://tinder-ce3a1-default-rtdb.firebaseio.com",
+      projectId: "tinder-ce3a1",
+      storageBucket: "tinder-ce3a1.firebasestorage.app",
+      messagingSenderId: "832688331776",
+      appId: "1:832688331776:web:0c78bf232fc9e10ce4cce5"
+    };
+
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // --- 2. STATE ---
+    let currentUser = null;
+    let myProfile = null;
+    let isSignup = false;
+    let uploadPhotos = []; // Stores Base64 strings for edit
+    let currentChatId = null;
+
+    // --- 3. AUTH LOGIC ---
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            currentUser = user;
+            const doc = await db.collection('users').doc(user.uid).get();
+            if (doc.exists) {
+                myProfile = doc.data();
+                initApp();
+            } else {
+                // New user flow
+                document.getElementById('view-auth').classList.remove('active');
+                loadSetupData(); // Clean setup
+            }
+        } else {
+            showView('view-auth');
+            document.getElementById('navbar').style.display = 'none';
+        }
+    });
+
+    function toggleAuth() {
+        isSignup = !isSignup;
+        document.getElementById('auth-sub').innerText = isSignup ? "Create an account" : "Login to find matches";
+        document.getElementById('btn-action').innerText = isSignup ? "Sign Up" : "Login";
+    }
+
+    function handleAuthAction() {
+        const email = document.getElementById('email').value;
+        const pass = document.getElementById('password').value;
+        const errBox = document.getElementById('auth-error');
+        
+        if(!email || !pass) {
+            errBox.style.display = 'block'; errBox.innerText = "Please fill all fields"; return;
+        }
+
+        if(isSignup) {
+            auth.createUserWithEmailAndPassword(email, pass).catch(e => {
+                errBox.style.display = 'block'; errBox.innerText = e.message;
+            });
+        } else {
+            auth.signInWithEmailAndPassword(email, pass).catch(e => {
+                errBox.style.display = 'block'; errBox.innerText = e.message;
+            });
+        }
+    }
+
+    function doLogout() { auth.signOut(); location.reload(); }
+
+    // --- 4. PROFILE & PHOTOS ---
+    function loadSetupData() {
+        showView('view-setup');
+        document.getElementById('navbar').style.display = 'none';
+        
+        // Reset or Fill
+        uploadPhotos = myProfile ? (myProfile.photos || []) : [];
+        document.getElementById('setup-name').value = myProfile ? myProfile.name : "";
+        document.getElementById('setup-city').value = myProfile ? myProfile.city : "";
+        document.getElementById('setup-blur').checked = myProfile ? myProfile.isBlur : false;
+        
+        renderPhotoGrid();
+    }
+
+    function renderPhotoGrid() {
+        const grid = document.getElementById('photo-grid');
+        grid.innerHTML = "";
+        
+        // Render existing photos
+        uploadPhotos.forEach((pic, idx) => {
+            const div = document.createElement('div');
+            div.className = 'photo-slot';
+            div.innerHTML = `<img src="${pic}"> <div class="remove-photo" onclick="removePhoto(${idx})">×</div>`;
+            grid.appendChild(div);
+        });
+
+        // Add "+" button if less than 4 photos
+        if(uploadPhotos.length < 4) {
+            const addBtn = document.createElement('div');
+            addBtn.className = 'photo-slot';
+            addBtn.innerHTML = `<i class="fas fa-plus" style="font-size: 1.5rem; color: #ccc;"></i>`;
+            addBtn.onclick = () => document.getElementById('file-input').click();
+            grid.appendChild(addBtn);
+        }
+    }
+
+    function handleFileSelect(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        
+        // Resize and Convert to Base64
+        const reader = new FileReader();
+        reader.onload = (readerEvent) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const maxSize = 500; // Limit size
+                let w = img.width; let h = img.height;
+                if(w > h) { if(w > maxSize) { h *= maxSize/w; w = maxSize; } }
+                else { if(h > maxSize) { w *= maxSize/h; h = maxSize; } }
+                canvas.width = w; canvas.height = h;
+                ctx.drawImage(img, 0, 0, w, h);
+                
+                uploadPhotos.push(canvas.toDataURL('image/jpeg', 0.8));
+                renderPhotoGrid();
+            }
+            img.src = readerEvent.target.result;
+        }
+        reader.readAsDataURL(file);
+        e.target.value = ''; // Reset input
+    }
+
+    function removePhoto(idx) {
+        uploadPhotos.splice(idx, 1);
+        renderPhotoGrid();
+    }
+
+    async function saveProfile() {
+        const name = document.getElementById('setup-name').value;
+        const city = document.getElementById('setup-city').value;
+        const isBlur = document.getElementById('setup-blur').checked;
+
+        if(!name || !city || uploadPhotos.length === 0) return alert("Please add name, city and at least 1 photo.");
+
+        await db.collection('users').doc(currentUser.uid).set({
+            name, city, cityLower: city.toLowerCase(),
+            photos: uploadPhotos,
+            isBlur: isBlur,
+            email: currentUser.email,
+            isAdmin: currentUser.email === "admin@test.com"
+        }, { merge: true });
+
+        // Reload local data
+        const d = await db.collection('users').doc(currentUser.uid).get();
+        myProfile = d.data();
+        initApp();
+    }
+
+    // --- 5. MAIN UI LOGIC ---
+    function initApp() {
+        document.getElementById('navbar').style.display = 'flex';
+        
+        // Setup Profile View
+        document.getElementById('my-name-display').innerText = myProfile.name;
+        document.getElementById('my-city-display').innerText = myProfile.city;
+        document.getElementById('my-main-pic').src = myProfile.photos[0];
+        if(myProfile.isAdmin) document.getElementById('dev-area').style.display = 'block';
+
+        navTo('home');
+    }
+
+    function navTo(page) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+        if(page === 'home') {
+            document.getElementById('view-home').classList.add('active');
+            document.querySelector('.nav-item:nth-child(1)').classList.add('active');
+            loadSuggestions();
+        }
+        else if(page === 'chats') {
+            document.getElementById('view-chats').classList.add('active');
+            document.querySelector('.nav-item:nth-child(2)').classList.add('active');
+            loadChatList();
+        }
+        else if(page === 'profile') {
+            document.getElementById('view-profile').classList.add('active');
+            document.querySelector('.nav-item:nth-child(3)').classList.add('active');
+        }
+    }
+
+    function showView(id) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    // --- 6. HOME CAROUSEL & SWIPING ---
+    async function loadSuggestions() {
+        const area = document.getElementById('card-area');
+        area.innerHTML = `<div class="loading">Looking for people in ${myProfile.city}...</div>`;
+
+        // Get users in city
+        const snap = await db.collection('users')
+            .where('cityLower', '==', myProfile.cityLower).limit(20).get();
+        
+        let users = [];
+        snap.forEach(d => { if(d.id !== currentUser.uid) users.push({id: d.id, ...d.data()}); });
+
+        if(users.length === 0) {
+            area.innerHTML = `<div class="loading">No one new nearby.<br>Use Admin Tools to generate users.</div>`;
+            return;
+        }
+
+        // Just show first user for demo stack
+        renderCard(users[0]);
+    }
+
+    let currentCardUser = null;
+    let currentImgIdx = 0;
+
+    function renderCard(user) {
+        currentCardUser = user;
+        currentImgIdx = 0;
+        const area = document.getElementById('card-area');
+        
+        // Generate Slides
+        let slidesHtml = '';
+        let dotsHtml = '';
+        user.photos.forEach((pic, i) => {
+            const active = i === 0 ? 'active' : '';
+            // Check Blur Toggle
+            const blurClass = user.isBlur ? 'blur-img' : ''; 
+            slidesHtml += `<img src="${pic}" class="carousel-img ${active} ${blurClass}" id="slide-${i}">`;
+            dotsHtml += `<div class="dot ${active}" id="dot-${i}"></div>`;
+        });
+
+        area.innerHTML = `
+            <div class="profile-card">
+                <div class="carousel">
+                    ${slidesHtml}
+                    <div class="tap-area tap-left" onclick="slideCard(-1)"></div>
+                    <div class="tap-area tap-right" onclick="slideCard(1)"></div>
+                    <div class="slider-dots">${dotsHtml}</div>
+                </div>
+                <div class="card-overlay">
+                    <h2>${user.name}</h2>
+                    <p>${user.city}</p>
+                    ${user.isBlur ? '<small><i class="fas fa-eye-slash"></i> Photos Blurred</small>' : ''}
+                </div>
+            </div>
+            <div class="actions">
+                <button class="act-btn btn-no" onclick="handleSwipe('no')"><i class="fas fa-times"></i></button>
+                <button class="act-btn btn-yes" onclick="handleSwipe('yes')"><i class="fas fa-heart"></i></button>
+            </div>
+        `;
+    }
+
+    function slideCard(dir) {
+        const photos = currentCardUser.photos;
+        const max = photos.length;
+        
+        // Remove active class from current
+        document.getElementById(`slide-${currentImgIdx}`).classList.remove('active');
+        document.getElementById(`dot-${currentImgIdx}`).classList.remove('active');
+        
+        // Calculate new index
+        currentImgIdx = currentImgIdx + dir;
+        if(currentImgIdx < 0) currentImgIdx = max - 1;
+        if(currentImgIdx >= max) currentImgIdx = 0;
+
+        // Add active class to new
+        document.getElementById(`slide-${currentImgIdx}`).classList.add('active');
+        document.getElementById(`dot-${currentImgIdx}`).classList.add('active');
+    }
+
+    async function handleSwipe(type) {
+        if(type === 'yes') {
+            // Create Match (Auto-match for demo simplicity)
+            const chatId = [currentUser.uid, currentCardUser.id].sort().join('_');
+            await db.collection('matches').doc(chatId).set({
+                users: [currentUser.uid, currentCardUser.id],
+                usersData: { 
+                    [currentUser.uid]: {name: myProfile.name, pic: myProfile.photos[0]},
+                    [currentCardUser.id]: {name: currentCardUser.name, pic: currentCardUser.photos[0]}
+                },
+                lastMsg: "It's a Match!",
+                updated: Date.now()
+            }, {merge: true});
+            alert("Matched with " + currentCardUser.name);
+        }
+        loadSuggestions(); // Load next
+    }
+
+    // --- 7. CHATTING (REALTIME) ---
+    function loadChatList() {
+        const cont = document.getElementById('chat-list-container');
+        cont.innerHTML = `<div class="loading">Loading...</div>`;
+        
+        db.collection('matches')
+            .where('users', 'array-contains', currentUser.uid)
+            .orderBy('updated', 'desc')
+            .onSnapshot(snap => {
+                cont.innerHTML = "";
+                if(snap.empty) { cont.innerHTML = `<div class="loading">No matches yet.</div>`; return; }
+                
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const otherId = data.users.find(id => id !== currentUser.uid);
+                    const otherUser = data.usersData[otherId];
+                    
+                    const div = document.createElement('div');
+                    div.className = 'chat-list-item';
+                    div.innerHTML = `
+                        <img src="${otherUser.pic}" class="avatar">
+                        <div>
+                            <div style="font-weight:600">${otherUser.name}</div>
+                            <div style="font-size:0.8rem; color:#888;">${data.lastMsg}</div>
+                        </div>
+                    `;
+                    div.onclick = () => openChat(doc.id, otherUser);
+                    cont.appendChild(div);
+                });
+            });
+    }
+
+    function openChat(chatId, partner) {
+        currentChatId = chatId;
+        document.getElementById('chat-header-name').innerText = partner.name;
+        document.getElementById('chat-header-img').src = partner.pic;
+        showView('view-chat-window');
+        document.getElementById('navbar').style.display = 'none';
+
+        const msgCont = document.getElementById('msg-container');
+        msgCont.innerHTML = "";
+
+        // Realtime Messages
+        db.collection('matches').doc(chatId).collection('messages')
+            .orderBy('ts', 'asc')
+            .onSnapshot(snap => {
+                msgCont.innerHTML = "";
+                snap.forEach(d => {
+                    const m = d.data();
+                    const cls = m.uid === currentUser.uid ? 'msg-me' : 'msg-them';
+                    msgCont.innerHTML += `<div class="msg ${cls}">${m.txt}</div>`;
+                });
+                msgCont.scrollTop = msgCont.scrollHeight;
+            });
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('msg-input');
+        const txt = input.value.trim();
+        if(!txt) return;
+
+        db.collection('matches').doc(currentChatId).collection('messages').add({
+            txt: txt, uid: currentUser.uid, ts: Date.now()
+        });
+        db.collection('matches').doc(currentChatId).update({
+            lastMsg: txt, updated: Date.now()
+        });
+        input.value = "";
+    }
+
+    // --- 8. DEV TOOLS ---
+    async function generateFakeUsers() {
+        const names = ["Simran", "Kabir", "Zara"];
+        for(let n of names) {
+            await db.collection('users').add({
+                name: n + " (Bot)", city: myProfile.city, cityLower: myProfile.cityLower,
+                photos: ["https://via.placeholder.com/400x500?text=Fake+1", "https://via.placeholder.com/400x500?text=Fake+2"],
+                isBlur: false, isAdmin: false
+            });
+        }
+        alert("3 Fake users created!");
+    }
+
+</script>
+</body>
+</html>
